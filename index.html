@@ -42,6 +42,7 @@ input,textarea,select{width:100%;padding:11px 12px;border:1px solid var(--line);
 </aside>
 </div><footer>BerOpp Group Space preview · No Firebase deployment · No paid services enabled</footer>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const KEY='beropp_group_space_preview_v1';
 const $=id=>document.getElementById(id);
@@ -60,7 +61,6 @@ $('resetBtn').addEventListener('click',()=>{if(!confirm('Clear this local previe
 $('drawBtn').addEventListener('click',()=>{if(state.assignments||state.members.length<2)return;const names=[...state.members];let perm;for(let tries=0;tries<1000;tries++){perm=[...names];for(let i=perm.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[perm[i],perm[j]]=[perm[j],perm[i]]}if(perm.every((n,i)=>n!==names[i]))break;perm=null}if(!perm){$('drawStatus').textContent='Could not create a valid draw. Try again.';return}const wheel=$('wheel');wheel.style.transform='rotate(0deg)';requestAnimationFrame(()=>wheel.style.transform='rotate('+(1440+Math.floor(Math.random()*720))+'deg)');$('drawBtn').disabled=true;$('drawStatus').textContent='Spinning…';setTimeout(()=>{state.assignments=names.map((n,i)=>({from:n,to:perm[i]}));save();render();$('drawStatus').textContent='Demo draw complete. Results below are visible in this browser.'},3050)});
 $('chatForm').addEventListener('submit',e=>{e.preventDefault();const text=$('chatText').value.trim();if(!text)return;state.messages.push({name:$('chatName').value||'Guest',text,time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})});state.messages=state.messages.slice(-200);$('chatText').value='';save();render()});
 $('clearChat').addEventListener('click',()=>{state.messages=[];save();render()});
-load();if(state.groupName){$('groupName').value=state.groupName;$('creatorName').value=state.creator;$('firstMembers').value=state.members.filter(n=>n!==state.creator).join(', ')}render();</script>src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+load();if(state.groupName){$('groupName').value=state.groupName;$('creatorName').value=state.creator;$('firstMembers').value=state.members.filter(n=>n!==state.creator).join(', ')}render();</script>
 </body>
 </html>
-
