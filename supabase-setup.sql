@@ -88,7 +88,7 @@ create policy "giver sees own assignment" on public.beropp_gift_assignments for 
 create or replace function public.beropp_create_group(p_name text,p_display_name text)
 returns public.beropp_groups
 language plpgsql security definer set search_path=public,auth
-as $
+as $$
 declare g public.beropp_groups; invite text;
 begin
   if auth.uid() is null then raise exception 'Sign in first'; end if;
