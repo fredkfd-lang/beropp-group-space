@@ -56,8 +56,14 @@ create policy "profile insert own" on public.beropp_profiles for insert to authe
 drop policy if exists "profile update own" on public.beropp_profiles;
 create policy "profile update own" on public.beropp_profiles for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 
+create or replace function public.beropp_is_group_member(p_group_id uuid,p_user_id uuid)
+returns boolean language sql stable security definer set search_path=public,auth
+as $ select exists(select 1 from public.beropp_group_members where group_id=p_group_id and user_id=p_user_id); $;
+revoke all on function public.beropp_is_group_member(uuid,uuid) from public;
+grant execute on function public.beropp_is_group_member(uuid,uuid) to authenticated;
+
 drop policy if exists "groups read when member" on public.beropp_groups;
-create policy "groups read when member" on public.beropp_groups for select to authenticated using (exists(select 1 from public.beropp_group_members m where m.group_id=id and m.user_id=auth.uid()));
+create policy "groups read when member" on public.beropp_groups for select to authenticated using (owner_id=auth.uid() or public.beropp_is_group_member(id,auth.uid()));
 drop policy if exists "groups create own" on public.beropp_groups;
 create policy "groups create own" on public.beropp_groups for insert to authenticated with check (owner_id=auth.uid());
 drop policy if exists "owner update group" on public.beropp_groups;
@@ -66,18 +72,36 @@ drop policy if exists "owner delete group" on public.beropp_groups;
 create policy "owner delete group" on public.beropp_groups for delete to authenticated using (owner_id=auth.uid());
 
 drop policy if exists "members read own groups" on public.beropp_group_members;
-create policy "members read own groups" on public.beropp_group_members for select to authenticated using (exists(select 1 from public.beropp_group_members m where m.group_id=group_id and m.user_id=auth.uid()));
+create policy "members read own groups" on public.beropp_group_members for select to authenticated using (user_id=auth.uid() or public.beropp_is_group_member(group_id,auth.uid()));
 drop policy if exists "owner adds initial member" on public.beropp_group_members;
 create policy "owner adds initial member" on public.beropp_group_members for insert to authenticated with check (user_id=auth.uid() and role='owner' and exists(select 1 from public.beropp_groups g where g.id=group_id and g.owner_id=auth.uid()));
 -- Joining other groups happens through the security-definer RPC below.
 
 drop policy if exists "members read group chat" on public.beropp_group_messages;
-create policy "members read group chat" on public.beropp_group_messages for select to authenticated using (exists(select 1 from public.beropp_group_members m where m.group_id=beropp_group_messages.group_id and m.user_id=auth.uid()));
+create policy "members read group chat" on public.beropp_group_messages for select to authenticated using (public.beropp_is_group_member(group_id,auth.uid()));
 drop policy if exists "members send group chat" on public.beropp_group_messages;
-create policy "members send group chat" on public.beropp_group_messages for insert to authenticated with check (user_id=auth.uid() and exists(select 1 from public.beropp_group_members m where m.group_id=beropp_group_messages.group_id and m.user_id=auth.uid() and m.display_name=beropp_group_messages.display_name));
+create policy "members send group chat" on public.beropp_group_messages for insert to authenticated with check (user_id=auth.uid() and public.beropp_is_group_member(group_id,auth.uid()) and exists(select 1 from public.beropp_group_members m where m.group_id=beropp_group_messages.group_id and m.user_id=auth.uid() and m.display_name=beropp_group_messages.display_name));
 
 drop policy if exists "giver sees own assignment" on public.beropp_gift_assignments;
 create policy "giver sees own assignment" on public.beropp_gift_assignments for select to authenticated using (giver_user_id=auth.uid());
+
+create or replace function public.beropp_create_group(p_name text,p_display_name text)
+returns public.beropp_groups
+language plpgsql security definer set search_path=public,auth
+as $
+declare g public.beropp_groups; invite text;
+begin
+  if auth.uid() is null then raise exception 'Sign in first'; end if;
+  if p_name is null or char_length(trim(p_name)) not between 1 and 70 then raise exception 'Group name must be 1-70 characters'; end if;
+  if p_display_name is null or char_length(trim(p_display_name)) not between 1 and 50 then raise exception 'Enter a display name (1-50 characters)'; end if;
+  invite := upper(substr(replace(gen_random_uuid()::text,'-',''),1,8));
+  insert into public.beropp_profiles(user_id,display_name) values(auth.uid(),trim(p_display_name))
+    on conflict(user_id) do update set display_name=excluded.display_name;
+  insert into public.beropp_groups(name,owner_id,invite_code) values(trim(p_name),auth.uid(),invite) returning * into g;
+  insert into public.beropp_group_members(group_id,user_id,display_name,role) values(g.id,auth.uid(),trim(p_display_name),'owner');
+  return g;
+end;
+$;
 
 create or replace function public.beropp_join_group(p_invite_code text,p_display_name text)
 returns public.beropp_groups
@@ -115,11 +139,9 @@ begin
   if exists(select 1 from public.beropp_gift_assignments where group_id=p_group_id) then raise exception 'The draw has already been run'; end if;
   select count(*) into n from public.beropp_group_members where group_id=p_group_id;
   if n<2 then raise exception 'At least two members are required'; end if;
-  select array_agg(user_id order by random()), array_agg(display_name order by user_id) into ids,names
-  from (select user_id,display_name from public.beropp_group_members where group_id=p_group_id order by random()) s;
-  -- Use a random non-zero cyclic offset, guaranteeing nobody draws themselves.
-  select array_agg(user_id),array_agg(display_name) into ids,names
-  from (select user_id,display_name from public.beropp_group_members where group_id=p_group_id order by random()) s;
+  -- Keep each user id paired with the matching display name in one randomized order.
+  select array_agg(user_id order by shuffle_order),array_agg(display_name order by shuffle_order) into ids,names
+  from (select user_id,display_name,row_number() over(order by random()) as shuffle_order from public.beropp_group_members where group_id=p_group_id) s;
   shift_by := 1 + floor(random()*(n-1))::integer;
   for i in 1..n loop
     insert into public.beropp_gift_assignments(group_id,giver_user_id,receiver_user_id,receiver_name)
@@ -129,6 +151,8 @@ begin
 end;
 $$;
 
+revoke all on function public.beropp_create_group(text,text) from public;
+grant execute on function public.beropp_create_group(text,text) to authenticated;
 revoke all on function public.beropp_join_group(text,text) from public;
 revoke all on function public.beropp_run_secret_gift_draw(uuid) from public;
 grant execute on function public.beropp_join_group(text,text) to authenticated;
