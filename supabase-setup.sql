@@ -58,7 +58,7 @@ create policy "profile update own" on public.beropp_profiles for update to authe
 
 create or replace function public.beropp_is_group_member(p_group_id uuid,p_user_id uuid)
 returns boolean language sql stable security definer set search_path=public,auth
-as $ select exists(select 1 from public.beropp_group_members where group_id=p_group_id and user_id=p_user_id); $;
+as $$ select exists(select 1 from public.beropp_group_members where group_id=p_group_id and user_id=p_user_id); $$;
 revoke all on function public.beropp_is_group_member(uuid,uuid) from public;
 grant execute on function public.beropp_is_group_member(uuid,uuid) to authenticated;
 
