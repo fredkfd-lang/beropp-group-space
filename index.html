@@ -43,7 +43,12 @@ input,textarea,select{width:100%;padding:11px 12px;border:1px solid var(--line);
 </div><footer>BerOpp Group Space preview · No Firebase deployment · No paid services enabled</footer>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
+<script>const SUPABASE_URL = "SHYIRAMO_PROJECT_URL";
+const SUPABASE_ANON_KEY = "SHYIRAMO_PUBLISHABLE_KEY";
+const supabase = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY
+);
 const KEY='beropp_group_space_preview_v1';
 const $=id=>document.getElementById(id);
 const safe=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
