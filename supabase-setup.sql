@@ -101,7 +101,7 @@ begin
   insert into public.beropp_group_members(group_id,user_id,display_name,role) values(g.id,auth.uid(),trim(p_display_name),'owner');
   return g;
 end;
-$;
+$$;
 
 create or replace function public.beropp_join_group(p_invite_code text,p_display_name text)
 returns public.beropp_groups
